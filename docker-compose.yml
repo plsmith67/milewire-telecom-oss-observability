@@ -1,0 +1,58 @@
+services:
+  simulator:
+    build: ./simulator
+    container_name: telecom-oss-simulator
+    ports:
+      - "8000:8000"
+    networks:
+      - oss-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  prometheus:
+    build: ./prometheus
+    container_name: telecom-oss-prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      simulator:
+        condition: service_healthy
+    networks:
+      - oss-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  grafana:
+    build: ./grafana
+    container_name: telecom-oss-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - oss-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health || wget -q -O /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  oss-net:
+    driver: bridge
