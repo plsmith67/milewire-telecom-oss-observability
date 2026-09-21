@@ -1,0 +1,374 @@
+groups:
+  - name: plte_ran
+    rules:
+      - alert: PLTECellOutage
+        expr: min by (site, sector) (lte_availability_pct) < 5
+        for: 30s
+        labels:
+          severity: critical
+          domain: RAN
+          kpi: lte_availability_pct
+        annotations:
+          summary: "Cell outage on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Sector availability is {{ $value }}%, below the 5% outage threshold."
+          threshold: "< 5"
+          kpi: lte_availability_pct
+
+      - alert: PLTELowAvailability
+        expr: min by (site, sector) (lte_availability_pct) < 99.5 and min by (site, sector) (lte_availability_pct) >= 98
+        for: 2m
+        labels:
+          severity: warning
+          domain: RAN
+          kpi: lte_availability_pct
+        annotations:
+          summary: "Low availability (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Availability {{ $value }}% is below 99.5%."
+          threshold: "< 99.5"
+          kpi: lte_availability_pct
+
+      - alert: PLTELowAvailability
+        expr: min by (site, sector) (lte_availability_pct) < 98 and min by (site, sector) (lte_availability_pct) >= 95
+        for: 1m
+        labels:
+          severity: major
+          domain: RAN
+          kpi: lte_availability_pct
+        annotations:
+          summary: "Low availability (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Availability {{ $value }}% is below 98%."
+          threshold: "< 98"
+          kpi: lte_availability_pct
+
+      - alert: PLTELowAvailability
+        expr: min by (site, sector) (lte_availability_pct) < 95 and min by (site, sector) (lte_availability_pct) >= 5
+        for: 30s
+        labels:
+          severity: critical
+          domain: RAN
+          kpi: lte_availability_pct
+        annotations:
+          summary: "Low availability (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Availability {{ $value }}% is below 95%."
+          threshold: "< 95"
+          kpi: lte_availability_pct
+
+  - name: plte_rf
+    rules:
+      - alert: PLTEPoorRSRP
+        expr: min by (site, sector) (lte_rsrp_dbm) < -95 and min by (site, sector) (lte_rsrp_dbm) >= -105
+        for: 2m
+        labels:
+          severity: warning
+          domain: RF
+          kpi: lte_rsrp_dbm
+        annotations:
+          summary: "Poor RSRP (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRP {{ $value }} dBm is below -95 dBm."
+          threshold: "< -95"
+          kpi: lte_rsrp_dbm
+
+      - alert: PLTEPoorRSRP
+        expr: min by (site, sector) (lte_rsrp_dbm) < -105 and min by (site, sector) (lte_rsrp_dbm) >= -110
+        for: 1m
+        labels:
+          severity: major
+          domain: RF
+          kpi: lte_rsrp_dbm
+        annotations:
+          summary: "Poor RSRP (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRP {{ $value }} dBm is below -105 dBm."
+          threshold: "< -105"
+          kpi: lte_rsrp_dbm
+
+      - alert: PLTEPoorRSRP
+        expr: min by (site, sector) (lte_rsrp_dbm) < -110
+        for: 30s
+        labels:
+          severity: critical
+          domain: RF
+          kpi: lte_rsrp_dbm
+        annotations:
+          summary: "Poor RSRP (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRP {{ $value }} dBm is below -110 dBm."
+          threshold: "< -110"
+          kpi: lte_rsrp_dbm
+
+      - alert: PLTEPoorRSRQ
+        expr: min by (site, sector) (lte_rsrq_db) < -12 and min by (site, sector) (lte_rsrq_db) >= -15
+        for: 2m
+        labels:
+          severity: warning
+          domain: RF
+          kpi: lte_rsrq_db
+        annotations:
+          summary: "Poor RSRQ (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRQ {{ $value }} dB is below -12 dB."
+          threshold: "< -12"
+          kpi: lte_rsrq_db
+
+      - alert: PLTEPoorRSRQ
+        expr: min by (site, sector) (lte_rsrq_db) < -15 and min by (site, sector) (lte_rsrq_db) >= -18
+        for: 1m
+        labels:
+          severity: major
+          domain: RF
+          kpi: lte_rsrq_db
+        annotations:
+          summary: "Poor RSRQ (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRQ {{ $value }} dB is below -15 dB."
+          threshold: "< -15"
+          kpi: lte_rsrq_db
+
+      - alert: PLTEPoorRSRQ
+        expr: min by (site, sector) (lte_rsrq_db) < -18
+        for: 30s
+        labels:
+          severity: critical
+          domain: RF
+          kpi: lte_rsrq_db
+        annotations:
+          summary: "Poor RSRQ (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "RSRQ {{ $value }} dB is below -18 dB."
+          threshold: "< -18"
+          kpi: lte_rsrq_db
+
+      - alert: PLTELowSINR
+        expr: min by (site, sector) (lte_sinr_db) < 10 and min by (site, sector) (lte_sinr_db) >= 5
+        for: 2m
+        labels:
+          severity: warning
+          domain: RF
+          kpi: lte_sinr_db
+        annotations:
+          summary: "Low SINR (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "SINR {{ $value }} dB is below 10 dB."
+          threshold: "< 10"
+          kpi: lte_sinr_db
+
+      - alert: PLTELowSINR
+        expr: min by (site, sector) (lte_sinr_db) < 5 and min by (site, sector) (lte_sinr_db) >= 0
+        for: 1m
+        labels:
+          severity: major
+          domain: RF
+          kpi: lte_sinr_db
+        annotations:
+          summary: "Low SINR (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "SINR {{ $value }} dB is below 5 dB."
+          threshold: "< 5"
+          kpi: lte_sinr_db
+
+      - alert: PLTELowSINR
+        expr: min by (site, sector) (lte_sinr_db) < 0
+        for: 30s
+        labels:
+          severity: critical
+          domain: RF
+          kpi: lte_sinr_db
+        annotations:
+          summary: "Low SINR (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "SINR {{ $value }} dB is below 0 dB."
+          threshold: "< 0"
+          kpi: lte_sinr_db
+
+  - name: plte_transport
+    rules:
+      - alert: PLTEHighLatency
+        expr: max by (site, sector) (lte_latency_ms) > 40 and max by (site, sector) (lte_latency_ms) <= 80
+        for: 2m
+        labels:
+          severity: warning
+          domain: Transport
+          kpi: lte_latency_ms
+        annotations:
+          summary: "High latency (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Latency {{ $value }} ms exceeds 40 ms."
+          threshold: "> 40"
+          kpi: lte_latency_ms
+
+      - alert: PLTEHighLatency
+        expr: max by (site, sector) (lte_latency_ms) > 80 and max by (site, sector) (lte_latency_ms) <= 120
+        for: 1m
+        labels:
+          severity: major
+          domain: Transport
+          kpi: lte_latency_ms
+        annotations:
+          summary: "High latency (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Latency {{ $value }} ms exceeds 80 ms."
+          threshold: "> 80"
+          kpi: lte_latency_ms
+
+      - alert: PLTEHighLatency
+        expr: max by (site, sector) (lte_latency_ms) > 120
+        for: 30s
+        labels:
+          severity: critical
+          domain: Transport
+          kpi: lte_latency_ms
+        annotations:
+          summary: "High latency (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Latency {{ $value }} ms exceeds 120 ms."
+          threshold: "> 120"
+          kpi: lte_latency_ms
+
+      - alert: PLTEHighPacketLoss
+        expr: max by (site, sector) (lte_packet_loss_pct) > 1 and max by (site, sector) (lte_packet_loss_pct) <= 5
+        for: 2m
+        labels:
+          severity: warning
+          domain: Transport
+          kpi: lte_packet_loss_pct
+        annotations:
+          summary: "High packet loss (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Packet loss {{ $value }}% exceeds 1%."
+          threshold: "> 1"
+          kpi: lte_packet_loss_pct
+
+      - alert: PLTEHighPacketLoss
+        expr: max by (site, sector) (lte_packet_loss_pct) > 5 and max by (site, sector) (lte_packet_loss_pct) <= 8
+        for: 1m
+        labels:
+          severity: major
+          domain: Transport
+          kpi: lte_packet_loss_pct
+        annotations:
+          summary: "High packet loss (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Packet loss {{ $value }}% exceeds 5%."
+          threshold: "> 5"
+          kpi: lte_packet_loss_pct
+
+      - alert: PLTEHighPacketLoss
+        expr: max by (site, sector) (lte_packet_loss_pct) > 8
+        for: 30s
+        labels:
+          severity: critical
+          domain: Transport
+          kpi: lte_packet_loss_pct
+        annotations:
+          summary: "High packet loss (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Packet loss {{ $value }}% exceeds 8%."
+          threshold: "> 8"
+          kpi: lte_packet_loss_pct
+
+  - name: plte_capacity
+    rules:
+      - alert: PLTEThroughputDegradation
+        expr: (min by (site, sector) (lte_dl_throughput_mbps) < 50 and min by (site, sector) (lte_dl_throughput_mbps) >= 20) or (min by (site, sector) (lte_ul_throughput_mbps) < 15 and min by (site, sector) (lte_ul_throughput_mbps) >= 5)
+        for: 2m
+        labels:
+          severity: warning
+          domain: Capacity
+          kpi: throughput
+        annotations:
+          summary: "Throughput degradation (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Downlink or uplink throughput is in the warning band (DL < 50 Mbps or UL < 15 Mbps)."
+          threshold: "DL < 50 or UL < 15"
+          kpi: throughput
+
+      - alert: PLTEThroughputDegradation
+        expr: (min by (site, sector) (lte_dl_throughput_mbps) < 20 and min by (site, sector) (lte_dl_throughput_mbps) >= 10) or (min by (site, sector) (lte_ul_throughput_mbps) < 5 and min by (site, sector) (lte_ul_throughput_mbps) >= 3)
+        for: 1m
+        labels:
+          severity: major
+          domain: Capacity
+          kpi: throughput
+        annotations:
+          summary: "Throughput degradation (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Downlink or uplink throughput is in the major band (DL < 20 Mbps or UL < 5 Mbps)."
+          threshold: "DL < 20 or UL < 5"
+          kpi: throughput
+
+      - alert: PLTEThroughputDegradation
+        expr: min by (site, sector) (lte_dl_throughput_mbps) < 10 or min by (site, sector) (lte_ul_throughput_mbps) < 3
+        for: 30s
+        labels:
+          severity: critical
+          domain: Capacity
+          kpi: throughput
+        annotations:
+          summary: "Throughput degradation (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Downlink or uplink throughput is critical (DL < 10 Mbps or UL < 3 Mbps)."
+          threshold: "DL < 10 or UL < 3"
+          kpi: throughput
+
+      - alert: PLTECapacityCongestion
+        expr: max by (site, sector) (lte_active_users) > 100 and max by (site, sector) (lte_active_users) <= 200
+        for: 2m
+        labels:
+          severity: warning
+          domain: Capacity
+          kpi: lte_active_users
+        annotations:
+          summary: "Capacity congestion (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Active users {{ $value }} exceed 100."
+          threshold: "> 100"
+          kpi: lte_active_users
+
+      - alert: PLTECapacityCongestion
+        expr: max by (site, sector) (lte_active_users) > 200 and max by (site, sector) (lte_active_users) <= 250
+        for: 1m
+        labels:
+          severity: major
+          domain: Capacity
+          kpi: lte_active_users
+        annotations:
+          summary: "Capacity congestion (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Active users {{ $value }} exceed 200."
+          threshold: "> 200"
+          kpi: lte_active_users
+
+      - alert: PLTECapacityCongestion
+        expr: max by (site, sector) (lte_active_users) > 250
+        for: 30s
+        labels:
+          severity: critical
+          domain: Capacity
+          kpi: lte_active_users
+        annotations:
+          summary: "Capacity congestion (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Active users {{ $value }} exceed 250."
+          threshold: "> 250"
+          kpi: lte_active_users
+
+  - name: plte_mobility
+    rules:
+      - alert: PLTEHandoverDegradation
+        expr: min by (site, sector) (lte_handover_success_pct) < 97 and min by (site, sector) (lte_handover_success_pct) >= 90
+        for: 2m
+        labels:
+          severity: warning
+          domain: Mobility
+          kpi: lte_handover_success_pct
+        annotations:
+          summary: "Handover degradation (warning) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Handover success {{ $value }}% is below 97%."
+          threshold: "< 97"
+          kpi: lte_handover_success_pct
+
+      - alert: PLTEHandoverDegradation
+        expr: min by (site, sector) (lte_handover_success_pct) < 90 and min by (site, sector) (lte_handover_success_pct) >= 75
+        for: 1m
+        labels:
+          severity: major
+          domain: Mobility
+          kpi: lte_handover_success_pct
+        annotations:
+          summary: "Handover degradation (major) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Handover success {{ $value }}% is below 90%."
+          threshold: "< 90"
+          kpi: lte_handover_success_pct
+
+      - alert: PLTEHandoverDegradation
+        expr: min by (site, sector) (lte_handover_success_pct) < 75
+        for: 30s
+        labels:
+          severity: critical
+          domain: Mobility
+          kpi: lte_handover_success_pct
+        annotations:
+          summary: "Handover degradation (critical) on {{ $labels.site }}/{{ $labels.sector }}"
+          description: "Handover success {{ $value }}% is below 75%."
+          threshold: "< 75"
+          kpi: lte_handover_success_pct

@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: incident-webhook
+  group_by: ["site", "sector", "alertname", "severity"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+
+receivers:
+  - name: incident-webhook
+    webhook_configs:
+      - url: http://incident:8080/webhooks/alertmanager
+        send_resolved: true
