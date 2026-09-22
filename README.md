@@ -1,6 +1,8 @@
 # Telecom OSS Observability — Private LTE
 
-Portfolio-quality observability platform for Private LTE operations. Phase 1 simulates sector KPIs and visualizes them in Grafana. Phase 2 adds Prometheus alert rules, Alertmanager, and an incident service that correlates alarms into operational incidents. This is deterministic rules and correlation — not an LLM or machine-learning system.
+Portfolio-quality observability platform for Private LTE operations. Phase 1 simulates sector KPIs and visualizes them in Grafana. Phase 2 adds Prometheus alert rules, Alertmanager, and an incident service that correlates alarms into operational incidents. Phase 3 adds statistical KPI anomaly detection and optional evidence-grounded AI incident triage.
+
+This stack uses deterministic rules, transparent hybrid statistics, and optional LLM assistance over stored evidence. It is **not** predictive maintenance, root-cause certainty, autonomous operations, or a production-ready OSS.
 
 ## Architecture
 
@@ -10,23 +12,27 @@ flowchart LR
     Sim[KPI Simulator :8000]
     Prom[Prometheus :9090]
     Am[Alertmanager :9093]
+    Ano[Anomaly Service :8081]
     Inc[Incident Service :8080]
     Graf[Grafana :3000]
   end
   Sim -->|"scrape /metrics"| Prom
   Prom -->|"alert rules"| Am
-  Am -->|"webhook"| Inc
+  Am -->|"webhook alarms"| Inc
+  Ano -->|"PromQL baselines"| Prom
+  Ano -->|"webhook anomalies"| Inc
   Graf -->|"PromQL"| Prom
-  Ops[Operator] -->|"acknowledge"| Inc
+  Ops[Operator] -->|"ack / analyze"| Inc
 ```
 
 | Component | Role |
 |-----------|------|
 | **Simulator** | FastAPI service generating realistic sector KPIs and Prometheus metrics |
-| **Prometheus** | Scrapes the simulator and incident service; evaluates Private LTE alert rules |
+| **Prometheus** | Scrapes simulator, incident, and anomaly services; evaluates Private LTE alert rules |
 | **Alertmanager** | Routes firing and resolved alerts to the incident webhook |
-| **Incident service** | Correlates alarms for the same site and sector into one incident |
-| **Grafana** | KPI dashboard plus incident operations dashboard |
+| **Anomaly service** | Rolling MAD / robust z-score / EWMA detector per site, sector, and KPI |
+| **Incident service** | Correlates threshold alarms and statistical anomalies; optional OpenAI triage |
+| **Grafana** | KPI, incident operations, and anomaly/AI triage dashboards |
 
 ### Topology
 
@@ -42,7 +48,7 @@ Each sector reports: RSRP, RSRQ, SINR, DL/UL throughput, packet loss, latency, a
 
 ## Quick start
 
-**Requirements:** Docker Engine with Compose v2, ports `8000`, `8080`, `9090`, `9093`, and `3000` free.
+**Requirements:** Docker Engine with Compose v2, ports `8000`, `8080`, `8081`, `9090`, `9093`, and `3000` free.
 
 ```bash
 docker compose up --build
@@ -67,9 +73,12 @@ docker compose down
 | Grafana | http://localhost:3000 | `admin` / `admin` |
 | KPI dashboard | http://localhost:3000/d/private-lte-oss/private-lte-oss-observability | `admin` / `admin` |
 | Incident dashboard | http://localhost:3000/d/private-lte-incidents/private-lte-incident-operations | `admin` / `admin` |
+| Anomaly / AI triage dashboard | http://localhost:3000/d/private-lte-anomaly-triage/private-lte-anomaly-and-ai-triage | `admin` / `admin` |
 | Alertmanager | http://localhost:9093 | — |
 | Incident API / docs | http://localhost:8080/docs | — |
 | Incident health | http://localhost:8080/health | — |
+| Anomaly API / docs | http://localhost:8081/docs | — |
+| Anomaly health | http://localhost:8081/health | — |
 
 ## Demo scenarios
 
@@ -116,6 +125,17 @@ curl -s -X POST http://localhost:8000/failures/capacity-congestion \
 ```
 
 Omitting `sector` applies the failure to every sector at the site.
+
+### Overlapping failure composition
+
+Multiple failures on the same sector compose **monotonically** (worst wins). Adding a failure never improves an already-degraded KPI.
+
+| KPI direction | Composition |
+|---------------|-------------|
+| Higher is better (RSRP, RSRQ, SINR, availability, DL/UL throughput, handover success) | `min(current, proposed)` |
+| Lower is better (latency, packet loss, active users as congestion) | `max(current, proposed)` |
+
+Operating state uses the highest active severity: `normal` &lt; `degraded` &lt; `critical`. Soft drift alone stays `normal` so Phase 2 static warnings do not trip early; combining soft drift with RF interference yields `degraded` and SINR in the RF critical band (below 10 dB), so `PLTELowSINR` can fire while soft drift remains applied. Cell outage applies an absolute override and dominates every other failure.
 
 ### 5. Inspect and clear
 
@@ -170,16 +190,26 @@ pip install -r requirements.txt
 pytest
 ```
 
+```bash
+cd anomaly
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pytest
+```
+
 ## Project layout
 
 ```
 telecom-oss-observability/
 ├── docker-compose.yml
+├── .env.example               # Optional OPENAI_* and anomaly overrides
 ├── simulator/                 # FastAPI KPI simulator + pytest
-├── incident/                  # Alert correlation and incident API
+├── anomaly/                   # Statistical KPI anomaly detector
+├── incident/                  # Alarm/anomaly correlation + optional AI triage
 ├── prometheus/                # Scrape config + Private LTE alert rules
 ├── alertmanager/              # Webhook routing to the incident service
-├── grafana/                   # Datasource + KPI and incident dashboards
+├── grafana/                   # KPI, incident, and anomaly dashboards
 └── README.md
 ```
 
@@ -209,20 +239,25 @@ Cell outage is critical only. Low availability covers degraded availability that
 3. The incident service keeps one open incident per `(site, sector)` and retains every contributing alarm.
 4. Incident severity is the highest firing alarm (`warning` &lt; `major` &lt; `critical`).
 5. `POST /api/v1/incidents/{id}/acknowledge` moves `active` to `acknowledged`. Cleared incidents return `409`.
-6. When every contributing alarm is resolved, the incident becomes `cleared`.
+6. When every contributing **alarm** is resolved **and** every contributing **anomaly** is cleared, the incident becomes `cleared`.
 
-Incident fields: id, site, sector, severity, lifecycle state, probable domain, first detected, last updated, cleared time, acknowledgement, contributing alarms, and affected KPIs.
+Incident fields: id, site, sector, severity, lifecycle state, probable domain, first detected, last updated, cleared time, acknowledgement, contributing alarms, contributing anomalies, and affected KPIs.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Liveness |
 | GET | `/ready` | Database readiness |
 | POST | `/webhooks/alertmanager` | Ingest Alertmanager alerts |
+| POST | `/webhooks/anomalies` | Ingest statistical anomaly events |
 | GET | `/api/v1/incidents` | List (`state`, `site`, `severity`) |
 | GET | `/api/v1/incidents/{id}` | Detail |
-| GET | `/api/v1/incidents/{id}/alarms` | Contributing alarms |
+| GET | `/api/v1/incidents/{id}/alarms` | Contributing threshold alarms |
+| GET | `/api/v1/incidents/{id}/anomalies` | Contributing anomalies |
+| GET | `/api/v1/incidents/{id}/evidence` | Unified evidence pack |
 | GET | `/api/v1/incidents/{id}/history` | Lifecycle history |
 | POST | `/api/v1/incidents/{id}/acknowledge` | Acknowledge an active incident |
+| POST | `/api/v1/incidents/{id}/analyze` | Optional AI triage |
+| GET | `/api/v1/incidents/{id}/analyses` | Stored AI analysis history |
 
 ### Repeatable incident demonstration
 
@@ -245,6 +280,99 @@ curl -X DELETE http://localhost:8000/failures
 
 After the failure is cleared and Prometheus resolves the alert, the incident lifecycle becomes `cleared`. Open the incident dashboard and filter Site to `plte-site-103`.
 
+## Phase 3 anomaly detection and AI triage
+
+The anomaly service polls Prometheus for per-`(site, sector, kpi)` series and scores the latest observation against a **protected** median / MAD baseline. Detector version: `hybrid-mad-ewma-v2`.
+
+### Baseline, observation, and guard interval
+
+| Concept | Behavior |
+|---------|----------|
+| **Baseline window** | Rolling history used for median / MAD (default `30m`) |
+| **Guard interval** | `baseline_guard_sec` (default `60`) gap between baseline end and the observation timestamp so current drift samples do not enter the reference used to score them |
+| **Observation** | Latest scraped sample only |
+| **Baseline freeze** | While a series is `warming_up` / `active` / `recovering`, median and σ stay frozen at the values captured when the candidate opened so degradation cannot retrain itself away |
+
+Query lookback is `baseline_window + baseline_guard_sec`. Only samples with `ts <= observation_ts - guard` contribute to median / MAD unless the series is already frozen.
+
+### Score formula
+
+```
+σ = max(1.4826 × MAD(baseline), ε)
+robust_z   = direction_score((x − median) / σ)   # >0 means worse for the KPI
+ewma_score = direction_score((x − ewma_prev) / σ)
+combined_score = max(robust_z, ewma_score)
+is_candidate = (robust_z > 0) and (combined_score ≥ threshold)
+```
+
+Component scales are dimensionless multiples of σ. Using `max` keeps a strong robust-z or EWMA signal from being diluted by a weak companion. Candidates still require `robust_z > 0`.
+
+### Persistence and per-KPI sensitivity
+
+| Setting | Default |
+|---------|---------|
+| Poll interval | 15s |
+| Baseline window | 30m |
+| Baseline guard | 60s |
+| Minimum baseline samples | 20 |
+| Persist count | 3 consecutive candidates → `active` |
+| Recover count | 2 consecutive non-candidates → clear |
+| Global score threshold | 3.5 (per-KPI overrides apply; SINR uses **3.0**) |
+
+Anomalies are **not** Phase 2 threshold alerts. Soft KPI drift holds SINR in **11.8–12.2 dB** (above warning `< 10`) so `PLTELowSINR` stays inactive while the detector can still fire on a clean ~19 dB baseline.
+
+### Soft-drift then threshold correlation demo
+
+1. Let the stack warm so Prometheus has baseline history (about 5+ minutes with default `ANOMALY_MIN_SAMPLES=20`).
+2. Inject soft drift (sub-warning RF/transport bias):
+
+```bash
+curl -s -X POST http://localhost:8000/failures/soft-kpi-drift \
+  -H 'Content-Type: application/json' \
+  -d '{"site":"plte-site-103","sector":"sector-gamma"}'
+```
+
+3. Wait for persistence (about 45s after the series is warm), then inspect:
+
+```bash
+curl -s http://localhost:8081/api/v1/anomalies?state=active | jq
+curl -s http://localhost:8080/api/v1/incidents | jq
+```
+
+4. Escalate into a Phase 2 warning/major band so a threshold alarm joins the **same** incident:
+
+```bash
+curl -s -X POST http://localhost:8000/failures/rf-interference \
+  -H 'Content-Type: application/json' \
+  -d '{"site":"plte-site-103","sector":"sector-gamma"}'
+```
+
+5. Optional AI triage (requires `OPENAI_API_KEY` in the environment; otherwise returns `unavailable`):
+
+```bash
+INCIDENT=$(curl -s 'http://localhost:8080/api/v1/incidents?site=plte-site-103' | jq -r '.[0].id')
+curl -s -X POST "http://localhost:8080/api/v1/incidents/${INCIDENT}/analyze" | jq
+```
+
+6. Clear and confirm recovery:
+
+```bash
+curl -X DELETE http://localhost:8000/failures
+```
+
+Copy `.env.example` to `.env` for optional OpenAI settings. Never commit API keys. When no key is configured, anomaly detection and incident operations continue; the analyze API and Grafana AI panels report that AI analysis is unavailable. Rule-based summaries are never labeled as AI-generated analysis.
+
+### Anomaly service API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Liveness |
+| GET | `/ready` | DB + Prometheus reachability |
+| GET | `/metrics` | Anomaly gauges for Grafana |
+| GET | `/api/v1/anomalies` | List anomalies |
+| GET | `/api/v1/anomalies/{id}` | Detail + sample window |
+| POST | `/api/v1/evaluate` | Run one evaluation cycle |
+
 ## Thresholds (dashboard)
 
 | KPI | Warning | Critical |
@@ -261,8 +389,10 @@ After the failure is cleared and Prometheus resolves the alert, the incident lif
 Stop conflicting services or change host port mappings in `docker-compose.yml`.
 
 **Prometheus target DOWN**  
-Open http://localhost:9090/targets and confirm `simulator:8000` and `incident:8080` are up. Ensure health checks passed (`docker compose ps`).
+Open http://localhost:9090/targets and confirm `simulator:8000`, `incident:8080`, and `anomaly:8081` are up. Ensure health checks passed (`docker compose ps`).
 
+**Anomalies do not appear**  
+The detector needs a warm **guarded** baseline (`ANOMALY_MIN_SAMPLES`, default 20 samples ending before `ANOMALY_BASELINE_GUARD_SEC`) and `persist_count` consecutive exceedances. Soft drift must run after warm-up and uses a narrow SINR band (11.8–12.2 dB). Check http://localhost:8081/api/v1/anomalies and anomaly service logs.
 **Alerts do not appear**  
 Rules need their `for` duration (30 seconds for critical cell outage). Check http://localhost:9090/alerts and http://localhost:9093/#/alerts. The incident service must be healthy before Alertmanager starts.
 

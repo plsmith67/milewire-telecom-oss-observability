@@ -62,6 +62,32 @@ class IncidentStore:
                 detail_json TEXT NOT NULL,
                 FOREIGN KEY (incident_id) REFERENCES incidents(id)
             );
+            CREATE TABLE IF NOT EXISTS contributing_anomalies (
+                id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                anomaly_id TEXT NOT NULL UNIQUE,
+                kpi TEXT NOT NULL,
+                score REAL NOT NULL,
+                status TEXT NOT NULL,
+                domain TEXT,
+                evidence_json TEXT NOT NULL,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                FOREIGN KEY (incident_id) REFERENCES incidents(id)
+            );
+            CREATE TABLE IF NOT EXISTS ai_analyses (
+                id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                response_json TEXT,
+                evidence_ref_json TEXT NOT NULL,
+                error TEXT,
+                FOREIGN KEY (incident_id) REFERENCES incidents(id)
+            );
             CREATE INDEX IF NOT EXISTS idx_incidents_open
                 ON incidents(site, sector, lifecycle_state);
             """
@@ -283,3 +309,141 @@ class IncidentStore:
                 (cutoff,),
             )
         )
+
+    def get_anomaly(self, anomaly_id: str) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM contributing_anomalies WHERE anomaly_id = ?",
+            (anomaly_id,),
+        ).fetchone()
+
+    def insert_anomaly(self, incident_id: str, anomaly: dict[str, Any]) -> str:
+        row_id = str(uuid.uuid4())
+        now = utc_now()
+        self._conn.execute(
+            """
+            INSERT INTO contributing_anomalies (
+                id, incident_id, anomaly_id, kpi, score, status, domain,
+                evidence_json, first_seen_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row_id,
+                incident_id,
+                anomaly["id"],
+                anomaly["kpi"],
+                float(anomaly.get("combined_score") or anomaly.get("score") or 0.0),
+                anomaly.get("status") or anomaly.get("lifecycle_state") or "active",
+                anomaly.get("domain"),
+                json.dumps(anomaly),
+                now,
+                now,
+            ),
+        )
+        return row_id
+
+    def update_anomaly(self, anomaly_id: str, anomaly: dict[str, Any], incident_id: str | None = None) -> None:
+        current = self.get_anomaly(anomaly_id)
+        if current is None:
+            return
+        self._conn.execute(
+            """
+            UPDATE contributing_anomalies SET
+                incident_id = ?,
+                kpi = ?,
+                score = ?,
+                status = ?,
+                domain = ?,
+                evidence_json = ?,
+                last_seen_at = ?
+            WHERE anomaly_id = ?
+            """,
+            (
+                incident_id or current["incident_id"],
+                anomaly["kpi"],
+                float(anomaly.get("combined_score") or anomaly.get("score") or current["score"]),
+                anomaly.get("status") or anomaly.get("lifecycle_state") or current["status"],
+                anomaly.get("domain") or current["domain"],
+                json.dumps(anomaly),
+                utc_now(),
+                anomaly_id,
+            ),
+        )
+
+    def list_anomalies(self, incident_id: str | None = None) -> list[sqlite3.Row]:
+        if incident_id:
+            return list(
+                self._conn.execute(
+                    "SELECT * FROM contributing_anomalies WHERE incident_id = ? ORDER BY first_seen_at",
+                    (incident_id,),
+                )
+            )
+        return list(
+            self._conn.execute("SELECT * FROM contributing_anomalies ORDER BY last_seen_at DESC")
+        )
+
+    def count_open_anomalies(self, incident_id: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM contributing_anomalies
+            WHERE incident_id = ? AND status IN ('active', 'recovering')
+            """,
+            (incident_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def insert_analysis(
+        self,
+        *,
+        incident_id: str,
+        provider: str,
+        model: str,
+        prompt_version: str,
+        status: str,
+        response: dict[str, Any] | None,
+        evidence_refs: list[str],
+        error: str | None = None,
+    ) -> str:
+        analysis_id = str(uuid.uuid4())
+        self._conn.execute(
+            """
+            INSERT INTO ai_analyses (
+                id, incident_id, provider, model, prompt_version, created_at,
+                status, response_json, evidence_ref_json, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                analysis_id,
+                incident_id,
+                provider,
+                model,
+                prompt_version,
+                utc_now(),
+                status,
+                json.dumps(response) if response is not None else None,
+                json.dumps(evidence_refs),
+                error,
+            ),
+        )
+        self.commit()
+        return analysis_id
+
+    def list_analyses(self, incident_id: str) -> list[sqlite3.Row]:
+        return list(
+            self._conn.execute(
+                "SELECT * FROM ai_analyses WHERE incident_id = ? ORDER BY created_at DESC",
+                (incident_id,),
+            )
+        )
+
+    def latest_analysis(self, incident_id: str | None = None) -> Optional[sqlite3.Row]:
+        if incident_id:
+            return self._conn.execute(
+                """
+                SELECT * FROM ai_analyses WHERE incident_id = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (incident_id,),
+            ).fetchone()
+        return self._conn.execute(
+            "SELECT * FROM ai_analyses ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()

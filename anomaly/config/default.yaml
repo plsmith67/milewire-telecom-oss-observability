@@ -1,0 +1,75 @@
+poll_interval_sec: 15
+baseline_window: 30m
+# Guard gap between baseline end and observation so drift samples do not
+# immediately enter the reference window used to score them.
+baseline_guard_sec: 60
+min_samples: 20
+score_threshold: 3.5
+persist_count: 3
+recover_count: 2
+stale_sec: 90
+ewma_alpha: 0.3
+detector_version: hybrid-mad-ewma-v2
+
+kpis:
+  lte_rsrp_dbm:
+    direction: lower
+    domain: RF
+    score_threshold: 3.0
+    mad_epsilon: 0.05
+  lte_rsrq_db:
+    direction: lower
+    domain: RF
+    score_threshold: 3.0
+    mad_epsilon: 0.02
+  lte_sinr_db:
+    direction: lower
+    domain: RF
+    # Keep at 3.0 with max(robust_z, ewma_score); soft-drift ~12 dB vs clean
+    # median ~19 / MAD ~1.6 yields combined ≈ 3.0 without lowering globals.
+    score_threshold: 3.0
+    mad_epsilon: 0.05
+  lte_dl_throughput_mbps:
+    direction: lower
+    domain: Capacity
+    score_threshold: 3.5
+    mad_epsilon: 0.5
+  lte_ul_throughput_mbps:
+    direction: lower
+    domain: Capacity
+    score_threshold: 3.5
+    mad_epsilon: 0.2
+  lte_latency_ms:
+    direction: higher
+    domain: Transport
+    score_threshold: 3.5
+    mad_epsilon: 0.2
+  lte_packet_loss_pct:
+    direction: higher
+    domain: Transport
+    score_threshold: 3.5
+    mad_epsilon: 0.01
+  lte_availability_pct:
+    direction: lower
+    domain: RAN
+    score_threshold: 4.0
+    mad_epsilon: 0.01
+  lte_handover_success_pct:
+    direction: lower
+    domain: Mobility
+    score_threshold: 3.5
+    mad_epsilon: 0.05
+  lte_active_users:
+    direction: higher
+    domain: Capacity
+    score_threshold: 4.0
+    mad_epsilon: 1.0
+
+sites:
+  - plte-site-101
+  - plte-site-102
+  - plte-site-103
+sectors:
+  - sector-alpha
+  - sector-beta
+  - sector-gamma

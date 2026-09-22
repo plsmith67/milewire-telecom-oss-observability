@@ -29,3 +29,12 @@ scrape_configs:
         labels:
           service: incident-service
           network: private-lte
+
+  - job_name: anomaly-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - anomaly:8081
+        labels:
+          service: anomaly-service
+          network: private-lte

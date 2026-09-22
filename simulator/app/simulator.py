@@ -1,16 +1,57 @@
-"""Sector KPI generation with normal / degraded / critical operating states."""
+"""Sector KPI generation with normal / degraded / critical operating states.
+
+Overlapping failures compose monotonically: each failure proposes candidate KPI
+values that are merged with the running value using worst-of semantics so that
+adding a failure can never improve an already-degraded KPI.
+
+  higher-is-better KPIs → min(current, proposed)
+  lower-is-better  KPIs → max(current, proposed)
+
+Processing order does not change outcomes under this rule. Cell outage proposals
+use the worst bands and therefore dominate other failures.
+"""
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from app.config import KPI_RANGES, SECTOR_DISPLAY_NAMES, SECTORS, SITES, STATE_SEVERITY
+from app.config import (
+    KPI_RANGES,
+    SECTOR_DISPLAY_NAMES,
+    SECTORS,
+    SITES,
+    SOFT_DRIFT_RANGES,
+    STATE_SEVERITY,
+)
 from app.models import FailureType, OperatingState, SectorKPIs
 
 if TYPE_CHECKING:
     from app.failures import IncidentStore
+
+
+# Higher numeric value is healthier / better.
+HIGHER_IS_BETTER: Final[frozenset[str]] = frozenset(
+    {
+        "rsrp_dbm",
+        "rsrq_db",
+        "sinr_db",
+        "availability_pct",
+        "dl_throughput_mbps",
+        "ul_throughput_mbps",
+        "handover_success_pct",
+    }
+)
+
+# Higher numeric value is worse (latency, loss, congestion/utilization).
+LOWER_IS_BETTER: Final[frozenset[str]] = frozenset(
+    {
+        "latency_ms",
+        "packet_loss_pct",
+        "active_users",
+    }
+)
 
 
 def _sample(lo: float, hi: float, rng: random.Random) -> float:
@@ -18,6 +59,15 @@ def _sample(lo: float, hi: float, rng: random.Random) -> float:
     spread = (hi - lo) / 4.0
     value = rng.gauss(mid, max(spread, 0.01))
     return max(lo, min(hi, value))
+
+
+def compose_kpi(name: str, current: float, proposed: float) -> float:
+    """Merge a proposed failure effect into the current KPI (worst wins)."""
+    if name in HIGHER_IS_BETTER:
+        return min(current, proposed)
+    if name in LOWER_IS_BETTER:
+        return max(current, proposed)
+    raise KeyError(f"Unknown KPI composition direction for {name}")
 
 
 @dataclass
@@ -32,6 +82,9 @@ class SectorRuntime:
     def sector_name(self) -> str:
         return SECTOR_DISPLAY_NAMES[self.sector]
 
+    def _apply(self, name: str, proposed: float) -> None:
+        self.kpis[name] = compose_kpi(name, self.kpis[name], proposed)
+
     def regenerate(self, rng: random.Random) -> None:
         state_key = self.state.value
         self.kpis = {
@@ -39,7 +92,51 @@ class SectorRuntime:
             for name, ranges in KPI_RANGES.items()
         }
 
-        # Cell outage overrides: force near-zero availability and traffic
+        # Soft drift first (or any order): compose with min/max so hard failures still win.
+        if FailureType.SOFT_KPI_DRIFT in self.active_failures:
+            for name, band in SOFT_DRIFT_RANGES.items():
+                self._apply(name, _sample(*band, rng))
+
+        if FailureType.RF_INTERFERENCE in self.active_failures:
+            self._apply("rsrp_dbm", _sample(*KPI_RANGES["rsrp_dbm"]["critical"], rng))
+            self._apply("rsrq_db", _sample(*KPI_RANGES["rsrq_db"]["critical"], rng))
+            self._apply("sinr_db", _sample(*KPI_RANGES["sinr_db"]["critical"], rng))
+
+        if FailureType.BACKHAUL_DEGRADATION in self.active_failures:
+            self._apply("latency_ms", _sample(*KPI_RANGES["latency_ms"]["critical"], rng))
+            self._apply(
+                "packet_loss_pct",
+                _sample(*KPI_RANGES["packet_loss_pct"]["critical"], rng),
+            )
+            self._apply(
+                "dl_throughput_mbps",
+                _sample(*KPI_RANGES["dl_throughput_mbps"]["degraded"], rng),
+            )
+            self._apply(
+                "ul_throughput_mbps",
+                _sample(*KPI_RANGES["ul_throughput_mbps"]["degraded"], rng),
+            )
+
+        if FailureType.CAPACITY_CONGESTION in self.active_failures:
+            self._apply(
+                "active_users",
+                _sample(*KPI_RANGES["active_users"]["critical"], rng),
+            )
+            self._apply(
+                "handover_success_pct",
+                _sample(*KPI_RANGES["handover_success_pct"]["degraded"], rng),
+            )
+            self._apply(
+                "dl_throughput_mbps",
+                _sample(*KPI_RANGES["dl_throughput_mbps"]["degraded"], rng),
+            )
+            self._apply(
+                "ul_throughput_mbps",
+                _sample(*KPI_RANGES["ul_throughput_mbps"]["degraded"], rng),
+            )
+
+        # Cell outage dominates: absolute override after compositional faults so
+        # congestion/user semantics cannot keep a "busy" cell that is actually down.
         if FailureType.CELL_OUTAGE in self.active_failures:
             self.kpis["availability_pct"] = rng.uniform(0.0, 2.0)
             self.kpis["dl_throughput_mbps"] = rng.uniform(0.0, 0.5)
@@ -48,59 +145,9 @@ class SectorRuntime:
             self.kpis["handover_success_pct"] = rng.uniform(0.0, 10.0)
             self.kpis["packet_loss_pct"] = rng.uniform(50.0, 100.0)
             self.kpis["latency_ms"] = rng.uniform(500.0, 2000.0)
-
-        # RF interference biases RF KPIs toward critical even if state is degraded
-        if FailureType.RF_INTERFERENCE in self.active_failures:
-            self.kpis["rsrp_dbm"] = min(
-                self.kpis["rsrp_dbm"],
-                _sample(*KPI_RANGES["rsrp_dbm"]["critical"], rng),
-            )
-            self.kpis["rsrq_db"] = min(
-                self.kpis["rsrq_db"],
-                _sample(*KPI_RANGES["rsrq_db"]["critical"], rng),
-            )
-            self.kpis["sinr_db"] = min(
-                self.kpis["sinr_db"],
-                _sample(*KPI_RANGES["sinr_db"]["critical"], rng),
-            )
-
-        # Backhaul degradation biases transport KPIs
-        if FailureType.BACKHAUL_DEGRADATION in self.active_failures:
-            self.kpis["latency_ms"] = max(
-                self.kpis["latency_ms"],
-                _sample(*KPI_RANGES["latency_ms"]["critical"], rng),
-            )
-            self.kpis["packet_loss_pct"] = max(
-                self.kpis["packet_loss_pct"],
-                _sample(*KPI_RANGES["packet_loss_pct"]["critical"], rng),
-            )
-            self.kpis["dl_throughput_mbps"] = min(
-                self.kpis["dl_throughput_mbps"],
-                _sample(*KPI_RANGES["dl_throughput_mbps"]["degraded"], rng),
-            )
-            self.kpis["ul_throughput_mbps"] = min(
-                self.kpis["ul_throughput_mbps"],
-                _sample(*KPI_RANGES["ul_throughput_mbps"]["degraded"], rng),
-            )
-
-        # Capacity congestion biases users / HO / throughput
-        if FailureType.CAPACITY_CONGESTION in self.active_failures:
-            self.kpis["active_users"] = max(
-                self.kpis["active_users"],
-                _sample(*KPI_RANGES["active_users"]["critical"], rng),
-            )
-            self.kpis["handover_success_pct"] = min(
-                self.kpis["handover_success_pct"],
-                _sample(*KPI_RANGES["handover_success_pct"]["degraded"], rng),
-            )
-            self.kpis["dl_throughput_mbps"] = min(
-                self.kpis["dl_throughput_mbps"],
-                _sample(*KPI_RANGES["dl_throughput_mbps"]["degraded"], rng),
-            )
-            self.kpis["ul_throughput_mbps"] = min(
-                self.kpis["ul_throughput_mbps"],
-                _sample(*KPI_RANGES["ul_throughput_mbps"]["degraded"], rng),
-            )
+            self.kpis["rsrp_dbm"] = _sample(*KPI_RANGES["rsrp_dbm"]["critical"], rng)
+            self.kpis["rsrq_db"] = _sample(*KPI_RANGES["rsrq_db"]["critical"], rng)
+            self.kpis["sinr_db"] = _sample(*KPI_RANGES["sinr_db"]["critical"], rng)
 
     def to_model(self) -> SectorKPIs:
         return SectorKPIs(
@@ -130,6 +177,8 @@ class NetworkSimulator:
         FailureType.BACKHAUL_DEGRADATION: OperatingState.DEGRADED,
         FailureType.CELL_OUTAGE: OperatingState.CRITICAL,
         FailureType.CAPACITY_CONGESTION: OperatingState.DEGRADED,
+        # Soft drift alone stays normal so static warning rules do not trip early.
+        FailureType.SOFT_KPI_DRIFT: OperatingState.NORMAL,
     }
 
     def __init__(self, seed: int | None = 42) -> None:

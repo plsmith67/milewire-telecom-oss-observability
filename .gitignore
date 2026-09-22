@@ -7,6 +7,8 @@ __pycache__/
 venv/
 env/
 simulator/.venv/
+incident/.venv/
+anomaly/.venv/
 .env
 .pytest_cache/
 .mypy_cache/

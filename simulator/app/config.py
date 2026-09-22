@@ -72,3 +72,16 @@ STATE_SEVERITY: Final[dict[str, int]] = {
     "degraded": 1,
     "critical": 2,
 }
+
+# Sub-warning soft drift bands used by soft_kpi_drift (stay inside Phase 2 warning thresholds).
+# SINR uses a narrow 11.8–12.2 dB band: above static warning (<10) but ~3σ below a clean
+# ~19 dB / MAD≈1.6 baseline so the Phase 3 detector can demonstrate early anomaly.
+SOFT_DRIFT_RANGES: Final[dict[str, tuple[float, float]]] = {
+    "rsrp_dbm": (-92.0, -88.0),          # warning static < -95
+    "rsrq_db": (-11.5, -10.5),           # warning static < -12
+    "sinr_db": (11.8, 12.2),             # warning static < 10; narrow for repeatable demo
+    "latency_ms": (28.0, 36.0),          # warning static > 40
+    "packet_loss_pct": (0.4, 0.8),       # warning static > 1
+    "dl_throughput_mbps": (55.0, 70.0),  # warning static DL < 50
+    "ul_throughput_mbps": (16.0, 19.0),  # warning static UL < 15
+}

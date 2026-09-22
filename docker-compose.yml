@@ -21,6 +21,10 @@ services:
       - "8080:8080"
     environment:
       INCIDENT_DB_PATH: /data/incidents.db
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_SEC: ${OPENAI_TIMEOUT_SEC:-45}
+      AI_PROMPT_VERSION: ${AI_PROMPT_VERSION:-triage-v2}
     volumes:
       - incident-data:/data
     networks:
@@ -31,6 +35,38 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
+
+  anomaly:
+    build: ./anomaly
+    container_name: telecom-oss-anomaly
+    ports:
+      - "8081:8081"
+    environment:
+      ANOMALY_DB_PATH: /data/anomalies.db
+      ANOMALY_CONFIG: /app/config/default.yaml
+      PROMETHEUS_URL: http://prometheus:9090
+      INCIDENT_WEBHOOK_URL: http://incident:8080/webhooks/anomalies
+      ANOMALY_POLL_INTERVAL_SEC: ${ANOMALY_POLL_INTERVAL_SEC:-15}
+      ANOMALY_BASELINE_WINDOW: ${ANOMALY_BASELINE_WINDOW:-30m}
+      ANOMALY_MIN_SAMPLES: ${ANOMALY_MIN_SAMPLES:-20}
+      ANOMALY_PERSIST_COUNT: ${ANOMALY_PERSIST_COUNT:-3}
+      ANOMALY_RECOVER_COUNT: ${ANOMALY_RECOVER_COUNT:-2}
+    volumes:
+      - anomaly-data:/data
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      incident:
+        condition: service_healthy
+    networks:
+      - oss-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
     restart: unless-stopped
 
   alertmanager:
@@ -106,3 +142,4 @@ networks:
 volumes:
   alertmanager-data:
   incident-data:
+  anomaly-data:

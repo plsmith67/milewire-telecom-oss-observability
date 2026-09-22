@@ -119,6 +119,11 @@ def capacity_congestion(body: FailureRequest) -> Incident:
     return _inject(FailureType.CAPACITY_CONGESTION, body)
 
 
+@app.post("/failures/soft-kpi-drift", response_model=Incident, status_code=201)
+def soft_kpi_drift(body: FailureRequest) -> Incident:
+    return _inject(FailureType.SOFT_KPI_DRIFT, body)
+
+
 @app.delete("/failures/{failure_id}", response_model=MessageResponse)
 def delete_failure(failure_id: str) -> MessageResponse:
     if not state.store.delete(failure_id):

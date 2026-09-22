@@ -20,6 +20,7 @@ class FailureType(str, Enum):
     BACKHAUL_DEGRADATION = "backhaul_degradation"
     CELL_OUTAGE = "cell_outage"
     CAPACITY_CONGESTION = "capacity_congestion"
+    SOFT_KPI_DRIFT = "soft_kpi_drift"
 
 
 class FailureRequest(BaseModel):
