@@ -152,8 +152,8 @@ Grafana queries Prometheus. Incident and anomaly SQLite data use persistent Dock
 Requirements: Docker Desktop with Linux containers, Git, and free local ports `8000`, `8080`, `8081`, `9090`, `9093`, and `3000`.
 
 ```powershell
-git clone https://github.com/plsmith67/milewire-telecom-oss-observability.git
-cd .\milewire-telecom-oss-observability
+git clone https://github.com/plsmith67/telecom-oss-observability.git
+cd .\telecom-oss-observability
 Copy-Item .env.example .env
 docker compose up --build
 ```
@@ -406,7 +406,7 @@ Validated Grafana dashboard images will be added separately.
 ## Project Layout
 
 ```
-milewire-telecom-oss-observability/
+telecom-oss-observability/
 ├── docker-compose.yml
 ├── .env.example
 ├── LICENSE
